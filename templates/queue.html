@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bellhaven CRM sync - review queue</title>
+<style>
+:root { --ink:#1d2530; --muted:#667085; --line:#e3e6ea; --bg:#f6f7f9; --card:#fff; --accent:#1f5f8b;
+        --ok:#1a7f4b; --okbg:#e8f5ee; --bad:#b42318; --badbg:#fdecea; --warn:#8a5a00; --warnbg:#fff4d6; }
+* { box-sizing:border-box; }
+body { margin:0; font:15px/1.5 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color:var(--ink); background:var(--bg); }
+header { background:#fff; border-bottom:1px solid var(--line); padding:14px 28px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+header h1 { font-size:18px; margin:0; }
+header .meta { color:var(--muted); font-size:13px; flex:1; }
+main { max-width:1080px; margin:0 auto; padding:20px 28px 80px; }
+.mode { font-size:11px; font-weight:700; letter-spacing:.06em; padding:3px 8px; border-radius:4px; background:var(--okbg); color:var(--ok); }
+.mode.offline { background:var(--warnbg); color:var(--warn); }
+nav.tabs { display:flex; gap:4px; margin:4px 0 18px; border-bottom:1px solid var(--line); }
+nav.tabs a { padding:9px 14px; text-decoration:none; color:var(--muted); border-bottom:2px solid transparent; font-weight:600; font-size:14px; }
+nav.tabs a.on { color:var(--accent); border-color:var(--accent); }
+.flash { padding:10px 14px; border-radius:6px; margin:0 0 12px; font-size:14px; }
+.flash.ok { background:var(--okbg); color:var(--ok); } .flash.error { background:var(--badbg); color:var(--bad); } .flash.warn { background:var(--warnbg); color:var(--warn); }
+h2.group { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:26px 0 8px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px 18px; margin-bottom:14px; }
+.card h3 { margin:0 0 4px; font-size:16px; }
+.card .summary { margin:0 0 12px; color:#39424e; }
+.chip { display:inline-block; font-size:11.5px; font-weight:600; padding:2px 8px; border-radius:10px; background:#eef2f6; color:#39424e; margin-left:6px; vertical-align:middle; white-space:nowrap; }
+.chip.High { background:var(--okbg); color:var(--ok); } .chip.Medium { background:var(--warnbg); color:var(--warn); }
+.chip.Low, .chip.Human { background:#f1e9fb; color:#5b2d99; }
+.chip.applied { background:var(--okbg); color:var(--ok); } .chip.rejected { background:var(--badbg); color:var(--bad); } .chip.stale, .chip.failed { background:var(--warnbg); color:var(--warn); }
+table { border-collapse:collapse; width:100%; font-size:13.5px; }
+th, td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:600; }
+.label { font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); font-weight:600; margin:14px 0 4px; }
+.old { color:var(--bad); text-decoration:line-through; } .new { color:var(--ok); font-weight:600; }
+.cols { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; }
+.box { border:1px solid var(--line); border-radius:6px; padding:10px 12px; font-size:13.5px; background:#fbfcfd; }
+.box b.t { display:block; font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:4px; }
+.sop { border-left:4px solid var(--accent); background:#eef5fa; padding:8px 12px; border-radius:4px; font-size:13.5px; margin-top:12px; }
+.sop.block { border-color:var(--bad); background:var(--badbg); }
+ul.ev { margin:4px 0 0; padding-left:18px; font-size:13.5px; } ul.ev li { margin:2px 0; }
+.actions { display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap; }
+button { font:inherit; font-weight:600; border-radius:6px; padding:7px 16px; border:1px solid transparent; cursor:pointer; }
+button.approve { background:var(--ok); color:#fff; } button.reject { background:#fff; color:var(--bad); border-color:#e7b4ae; }
+button.run { background:var(--accent); color:#fff; }
+input.note { font:inherit; font-size:13.5px; padding:6px 9px; border:1px solid var(--line); border-radius:6px; width:260px; }
+code, .mono { font-family:ui-monospace, Menlo, Consolas, monospace; font-size:12.5px; }
+a { color:var(--accent); }
+.muted { color:var(--muted); } .small { font-size:13px; }
+.err { color:var(--bad); font-size:13.5px; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bellhaven &rarr; CRM sync</h1>
+  <span class="mode {{ 'offline' if offline }}">{{ 'OFFLINE REHEARSAL - fixture data, no real writes' if offline else 'LIVE CRM' }}</span>
+  <span class="meta">
+    {% if last_run %}Last run #{{ last_run.id }} &middot; {{ last_run.started_at }} &middot; {{ last_run.status }}
+      {% if last_run.status == 'ok' %}&middot; {{ last_run.locations }} website locations, {{ last_run.accounts }} CRM accounts{% else %}&middot; {{ last_run.message }}{% endif %}
+    {% else %}No pipeline run yet.{% endif %}
+  </span>
+  <form method="post" action="{{ url_for('run_now') }}"><button class="run">Run pipeline now</button></form>
+</header>
+<main>
+{% for category, message in get_flashed_messages(with_categories=true) %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+{% if report and report.warnings %}<div class="flash warn">Run warnings: {{ report.warnings | join(' | ') }}</div>{% endif %}
+
+<nav class="tabs">
+  <a href="?tab=pending" class="{{ 'on' if tab == 'pending' }}">To review ({{ n_pending }})</a>
+  <a href="?tab=decided" class="{{ 'on' if tab == 'decided' }}">Decided ({{ n_decided }})</a>
+  <a href="?tab=matched" class="{{ 'on' if tab == 'matched' }}">Matched, no change ({{ records | length }})</a>
+  <a href="?tab=runs" class="{{ 'on' if tab == 'runs' }}">Run history</a>
+</nav>
+
+{% macro account_box(a) %}
+<div class="box">
+  <b class="t">CRM account</b>
+  <b>{{ a.name }}</b> <span class="mono muted">{{ a.account_id }}</span>
+  {% if crm_link(a.account_id) %}<a class="small" href="{{ crm_link(a.account_id) }}" target="_blank">open in CRM</a>{% endif %}<br>
+  Parent: {{ a.parent_name }}<br>
+  {{ a.billing_street }}, {{ a.billing_city }}, {{ a.billing_state }} {{ a.billing_zip }}<br>
+  {{ a.care_type }} &middot; {{ a.status }} &middot; {{ a.phone }}<br>
+  Lifetime revenue {{ a.lifetime_revenue | money }} &middot; Outstanding AR {{ a.outstanding_ar | money }}<br>
+  <span class="muted">Contacts: {% for c in a.contacts %}{{ c.name }} ({{ c.title }}){{ ', ' if not loop.last }}{% else %}none{% endfor %}</span>
+</div>
+{% endmacro %}
+
+{% macro writes(p) %}
+<table>
+  <tr><th style="width:34%">Record</th><th style="width:20%">Field</th><th>Now</th><th>After approval</th></tr>
+  {% for act in p.actions %}
+    {% if act.op == 'create' %}
+      {% for field, value in act.fields.items() %}
+      <tr><td>{% if loop.first %}<b>NEW account</b>{% endif %}</td><td class="mono">{{ field }}</td><td class="muted">-</td><td class="new">{{ value }}</td></tr>
+      {% endfor %}
+    {% else %}
+      {% for field, value in act.changes.items() %}
+      <tr>
+        <td>{% if loop.first %}{{ act.account_name }}<br><span class="mono muted">{{ act.account_id }}</span>{% endif %}</td>
+        <td class="mono">{{ field }}</td>
+        <td class="old">{{ act.expect[field] or '(empty)' }}</td>
+        <td class="new">{{ 'id of the new account created above' if value == '$new' else value }}</td>
+      </tr>
+      {% endfor %}
+    {% endif %}
+  {% endfor %}
+</table>
+{% endmacro %}
+
+{% macro detail(p) %}
+  <div class="label">What will be written to the CRM</div>
+  {{ writes(p) }}
+  {% if p.sop %}<div class="sop {{ 'block' if p.sop.preserve }}"><b>Billing SOP check:</b> {{ p.sop.explanation }}</div>{% endif %}
+  <div class="label">Records involved</div>
+  <div class="cols">
+    {% if p.website %}
+    <div class="box">
+      <b class="t">Website</b>
+      <b>{{ p.website.name }}</b> <a class="small" href="{{ p.website.url }}" target="_blank">open page</a><br>
+      {{ p.website.street }}, {{ p.website.city }}, {{ p.website.state }} {{ p.website.zip }}<br>
+      {{ p.website.care_offerings | join(' + ') }} &middot; {{ p.website.phone }}<br>
+      <span class="muted">Administrator: {{ p.website.administrator }} &middot; found on: {{ p.website.found_on | join(', ') }}</span>
+    </div>
+    {% endif %}
+    {% for a in p.accounts %}{{ account_box(a) }}{% endfor %}
+  </div>
+  <div class="label">Evidence</div>
+  <ul class="ev">{% for e in p.evidence %}<li>{{ e }}</li>{% endfor %}</ul>
+{% endmacro %}
+
+{% if tab == 'pending' %}
+  {% if not groups %}<div class="card"><h3>Nothing to review</h3><p class="summary">Every finding has been decided. Re-running the pipeline will not bring decided items back.</p></div>{% endif %}
+  {% for kind, items in groups %}
+    <h2 class="group">{{ KIND_LABELS[kind] }} ({{ items | length }})</h2>
+    {% for item in items %}{% set p = item.payload %}
+    <div class="card" id="p-{{ item.fingerprint }}">
+      <h3>{{ p.title }} <span class="chip {{ p.confidence_label.split(' ')[0] }}">{{ p.confidence_label }}{% if not p.kind.startswith('flag_') %} confidence &middot; {{ p.confidence }}{% endif %}</span>
+        {% if item.status == 'failed' %}<span class="chip failed">last write failed - safe to retry</span>{% endif %}</h3>
+      <p class="summary">{{ p.summary }}</p>
+      {{ detail(p) }}
+      {% if item.status == 'failed' %}<div class="err">Last attempt: {{ item.decision_note }}</div>{% endif %}
+      <div class="actions">
+        <form method="post" action="{{ url_for('approve', fingerprint=item.fingerprint) }}"><button class="approve">Approve &amp; write to CRM</button></form>
+        <form method="post" action="{{ url_for('reject', fingerprint=item.fingerprint) }}">
+          <input class="note" name="note" placeholder="Reason for rejecting (optional)">
+          <button class="reject">Reject</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  {% endfor %}
+
+{% elif tab == 'decided' %}
+  {% if not decided %}<p class="muted">No decisions yet.</p>{% endif %}
+  {% for item in decided %}{% set p = item.payload %}
+  <div class="card">
+    <h3>{{ p.title }} <span class="chip {{ item.status }}">{{ item.status }}</span></h3>
+    <p class="small muted">{{ KIND_LABELS[p.kind] }} &middot; decided {{ item.decided_at }}{% if item.decision_note %} &middot; {{ item.decision_note }}{% endif %}</p>
+    {% if item.result %}
+      <ul class="ev">{% for line in item.result.log %}<li>{{ line }}</li>{% endfor %}</ul>
+      <p class="small">{% for id in item.result.created + item.result.updated %}{% if crm_link(id) %}<a href="{{ crm_link(id) }}" target="_blank">View {{ id }} in CRM browser</a>&nbsp;&nbsp;{% else %}<span class="mono">{{ id }}</span>&nbsp;&nbsp;{% endif %}{% endfor %}</p>
+    {% endif %}
+    <details><summary class="small muted">Show proposal and evidence</summary>{{ detail(p) }}</details>
+  </div>
+  {% endfor %}
+
+{% elif tab == 'matched' %}
+  <p class="muted small">Website locations matched to a CRM account with nothing to change. Shown so a reviewer can spot-check the matcher. No action needed.</p>
+  <div class="card">
+  <table>
+    <tr><th>Website location</th><th>CRM account</th><th>Confidence</th><th>Why</th></tr>
+    {% for r in records %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>{{ r.account_name }}<br><span class="mono muted">{{ r.account_id }}</span> {% if crm_link(r.account_id) %}<a class="small" href="{{ crm_link(r.account_id) }}" target="_blank">open</a>{% endif %}</td>
+      <td>{{ r.confidence }}</td>
+      <td class="small">{{ r.evidence | join(' ') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+
+{% else %}
+  <div class="card">
+  <table>
+    <tr><th>Run</th><th>Started (UTC)</th><th>Status</th><th>Locations</th><th>Accounts</th><th>New</th><th>Still pending</th><th>Decided, skipped</th><th>Went stale</th></tr>
+    {% for r in runs %}
+    <tr><td>#{{ r.id }}</td><td>{{ r.started_at }}</td><td>{{ r.status }}{% if r.message %}<br><span class="err">{{ r.message }}</span>{% endif %}</td>
+        <td>{{ r.locations }}</td><td>{{ r.accounts }}</td><td>{{ r.new_proposals }}</td><td>{{ r.still_pending }}</td><td>{{ r.skipped_decided }}</td><td>{{ r.went_stale }}</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% if report %}<p class="small muted">Last scrape: {{ report.scrape.locations }} locations from {{ report.scrape.directory_pages }} directory pages
+    (directory lists {{ report.scrape.directory_claim }}, homepage claims {{ report.scrape.homepage_claim }}).
+    {% if report.scrape.linked_outside_directory %}Found outside the directory: {{ report.scrape.linked_outside_directory | join(', ') }}.{% endif %}</p>{% endif %}
+{% endif %}
+</main>
+</body>
+</html>

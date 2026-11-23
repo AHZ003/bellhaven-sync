@@ -1,0 +1,12 @@
+# Daily Bellhaven -> CRM sync. Install with `crontab -e` on the machine that also runs the review app
+# (both share data/sync.db, which is what keeps already-decided proposals from coming back).
+#
+# 06:15 every day: early enough that the queue is ready before the sales day starts.
+# The run only reads the website and CRM and queues proposals. It never writes to the CRM.
+# A failed run exits non-zero and logs the reason; set MAILTO to get that by email.
+
+MAILTO=revops-alerts@example.com
+15 6 * * * cd /opt/bellhaven-sync && .venv/bin/python run_pipeline.py >> data/pipeline.log 2>&1
+
+# Windows equivalent (Task Scheduler):
+#   schtasks /Create /SC DAILY /ST 06:15 /TN "bellhaven-sync" /TR "cmd /c cd /d C:\bellhaven-sync && .venv\Scripts\python run_pipeline.py >> data\pipeline.log 2>&1"
